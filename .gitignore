@@ -14,4 +14,5 @@ _site
 .DS_Store
 *.log
 *.exe
+main
 debug
