@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jimlawless/cfg"
-	//"compress/gzip"
 	"fmt"
 	"log"
 	"os"
 	"time"
+
+	"github.com/jimlawless/cfg"
 )
 
 var logger *log.Logger
@@ -23,7 +23,7 @@ var cfg_file string
 var cfg_map map[string]string
 
 func main() {
-	//加载配置
+	//load config
 	flag.StringVar(&cfg_file, "conf", "./default.conf", "Input the config file use --conf=[file path]")
 	flag.Parse()
 
@@ -38,8 +38,16 @@ func main() {
 
 	maxFileSize := cfg_map["max_filesize"]
 	maxSize, _ := strconv.Atoi(maxFileSize)
+	// input dir
 	inputDir := cfg_map["input_dir"]
 	dirAyy := strings.Split(inputDir, ",")
+
+	// The time interval,unit second
+	intervalStr := cfg_map["interval"]
+	interval, _ := strconv.Atoi(intervalStr)
+	if interval == 0 {
+		interval = 10
+	}
 	for {
 		for _, dir := range dirAyy {
 			err := runDaemon(dir, maxSize)
@@ -49,7 +57,7 @@ func main() {
 			}
 		}
 
-		time.Sleep(time.Duration(10) * time.Second)
+		time.Sleep(time.Duration(interval) * time.Second)
 	}
 
 }
@@ -124,7 +132,7 @@ func delFile(files []string, maxFileSize int) {
 }
 
 func initLogger(log_file string) {
-	//日志初始化
+	//logger init
 	logfile, _ = os.OpenFile(log_file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	logger = log.New(logfile, "\r\n", log.Ldate|log.Ltime|log.Llongfile)
 }
