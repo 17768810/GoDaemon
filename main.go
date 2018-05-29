@@ -39,13 +39,16 @@ func main() {
 	maxFileSize := cfg_map["max_filesize"]
 	maxSize, _ := strconv.Atoi(maxFileSize)
 	inputDir := cfg_map["input_dir"]
-	//read the gz file
+	dirAyy := strings.Split(inputDir, ",")
 	for {
-		err := runDaemon(inputDir, maxSize)
-		//fmt.Println( files )
-		if err != nil {
-			logger.Println("runDeamon err:", err)
+		for _, dir := range dirAyy {
+			err := runDaemon(dir, maxSize)
+			//fmt.Println( files )
+			if err != nil {
+				logger.Println(dir+" runDeamon err:", err)
+			}
 		}
+
 		time.Sleep(time.Duration(10) * time.Second)
 	}
 
@@ -99,22 +102,10 @@ func delFile(files []string, maxFileSize int) {
 
 	// var br *bufio.Reader
 
-	// for i := 0; i < len(files); i++ {
-	// 	//logger.Println("find a gz file:"+files[i] + "\n")
-	// 	file, fileEr := os.Open(files[i])
-	// 	if fileEr != nil {
-	// 		logger.Println("file read error:", fileEr)
-	// 		return
-	// 	}
-
-	// 	defer file.Close()
-
-	// }
-
 	for _, name := range files {
 		fileSize, err := os.Stat(name)
 		if err != nil {
-			logger.Println("delGz err:", err)
+			logger.Println("delFile err:", err)
 		} else {
 			//maxSize
 			size := fileSize.Size()
