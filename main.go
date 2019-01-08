@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -12,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jimlawless/cfg"
+	"io/ioutil"
+	"sort"
 )
 
 var logger *log.Logger
@@ -37,7 +38,8 @@ func main() {
 	logger.Println("LogFileDaemon process start,PID:", pid)
 
 	maxFileSize := cfg_map["max_filesize"]
-	maxSize, _ := strconv.Atoi(maxFileSize)
+	maxSize, _ := strconv.ParseInt(maxFileSize, 0, 0)
+
 	// input dir
 	inputDir := cfg_map["input_dir"]
 	dirAyy := strings.Split(inputDir, ",")
@@ -50,7 +52,7 @@ func main() {
 	}
 	for {
 		for _, dir := range dirAyy {
-			err := runDaemon(dir, maxSize)
+			err := runDaemon(dir, maxSize*1024)
 			//fmt.Println( files )
 			if err != nil {
 				logger.Println(dir+" runDeamon err:", err)
@@ -62,73 +64,87 @@ func main() {
 
 }
 
-func runDaemon(inputDir string, maxSize int) (err error) {
-	files, err := getList(inputDir)
-	//fmt.Println( files )
-	if err == nil {
-		delFile(files, maxSize)
-	} else {
-		logger.Println(err)
-	}
-	return
+// 需要的文件信息字段
+type FileInfoExt struct {
+	FileSize int64  `json:"filesize"` //	文件大小
+	FilePath string `json:"filepath"` //	文件路径
+	FileDate int64  `json:"filedate"` //	 文件日期
 }
 
-func getList(dir string) (files []string, err error) {
-	var domains_filter []string
-	var domains_filter_cfg string
-	var gz_files []string
-	match := fmt.Sprintf("%s/*.*", dir)
-	gz_files, err = filepath.Glob(match)
-	if err != nil {
-		logger.Println("list gz files err:", gz_files)
-		return
+func runDaemon(inputDir string, maxSize int64) (err error) {
+
+	//遍历打印所有的文件名
+	var files []FileInfoExt
+	files, _ = GetAllFile(inputDir, files)
+
+	//for i, v := range files {
+	//	fmt.Println(fmt.Sprintf("index:%s , FilePath:%s , FileDate:%s , FileSize:%s", i, v.FilePath, v.FileDate, v.FileSize))
+	//}
+
+	var dirSize int64
+	for _, v := range files {
+		dirSize += v.FileSize
 	}
-	domains_filter_cfg = cfg_map["domains_filter"]
-	domains_filter = strings.Split(domains_filter_cfg, ",")
 
-	for _, fname := range gz_files {
-		var in = inArray(domains_filter, filepath.Base(fname))
-		//fmt.Println( "fname:",fname,"in?",in)
-		if in {
-			files = append(files, fname)
-			//fmt.Println( "find one", files )
-			continue
-		}
-	}
-	return
-}
+	// 目录的文件总大小，大于设置值
+	if dirSize > maxSize {
+		// 按文件创建日期，从小到大排序
+		sort.Slice(files, func(i, j int) bool {
+			return files[i].FileDate < files[j].FileDate
+		})
+		subValue := dirSize - maxSize // 差值
+		var deletedFileSize int64     // 已删除文件大小
 
-// maxFileSize ,unit Kb
-func delFile(files []string, maxFileSize int) {
-	// today := time.Now().Format("2006-01-02")
-	// goadf, err := os.OpenFile(cfg_map["output_dir"]+today+".log", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
-	// if err != nil {
-	// 	logger.Println("openfile err:", err)
-	// 	return
-	// }
-	// defer goadf.Close()
-
-	// var br *bufio.Reader
-
-	for _, name := range files {
-		fileSize, err := os.Stat(name)
-		if err != nil {
-			logger.Println("delFile err:", err)
-		} else {
-			//maxSize
-			size := fileSize.Size()
-			maxSize := int64(maxFileSize * 1024)
-			if size > maxSize {
-				err = os.Remove(name)
+		for _, v := range files {
+			if deletedFileSize > subValue {
+				break // 已删除文件的大小，大于差值
+			}
+			f, _ := os.Stat(v.FilePath)
+			if !f.IsDir() {
+				err := os.Remove(v.FilePath)
 				if err != nil {
-					logger.Println("delFile err:", err)
+					//如果删除失败则输出 file remove Error!
+					fmt.Println(v.FilePath + " file remove Error!")
+					//输出错误详细信息
+					fmt.Printf("%s", err)
 				} else {
-					fmt.Println("fileName:"+name+" , fileSize:", size)
-					logger.Println("fileName:"+name+" , fileSize:", size)
+					//删除成功!
+					deletedFileSize += v.FileSize
 				}
 			}
 		}
+
+		fmt.Println(fmt.Sprintf("file remove ok,total deleted size %s Kb!", deletedFileSize/1024))
 	}
+
+	return
+}
+
+func GetAllFile(pathname string, s []FileInfoExt) ([]FileInfoExt, error) {
+	rd, err := ioutil.ReadDir(pathname)
+	if err != nil {
+		fmt.Println("read dir fail:", err)
+		return s, err
+	}
+	for _, fi := range rd {
+		if fi.IsDir() {
+			fullDir := pathname + "/" + fi.Name()
+			s, err = GetAllFile(fullDir, s)
+			if err != nil {
+				fmt.Println("read dir fail:", err)
+				return s, err
+			}
+		} else {
+			fullName := pathname + "/" + fi.Name()
+			fileInfoExt := FileInfoExt{
+				FilePath: fullName,
+				FileDate: fi.ModTime().Unix(),
+				FileSize: fi.Size(),
+			}
+			s = append(s, fileInfoExt)
+		}
+	}
+	return s, nil
 }
 
 func initLogger(log_file string) {
